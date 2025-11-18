@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="ALPR/ALPR.csproj" />
   <Project Path="App/App.csproj" />
 </Solution>
