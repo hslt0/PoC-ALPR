@@ -78,27 +78,27 @@ public class DefaultOcr(
 
             for (var j = 0; j < vocabSize; j++)
             {
-                var flatIndex = (i * vocabSize) + j;
+                var flatIndex = i * vocabSize + j;
                 
                 if (flatIndex >= data.Length) break;
 
                 var val = data[flatIndex];
+                
                 if (val > maxVal)
                 {
                     maxVal = val;
                     maxIdx = j;
                 }
             }
+
+            if (maxIdx >= _alphabet.Length) continue;
             
-            if (maxIdx < _alphabet.Length)
-            {
-                var predictedChar = _alphabet[maxIdx];
-                if (predictedChar != '_')
-                {
-                    resultText += predictedChar;
-                    confidences.Add(maxVal);
-                }
-            }
+            var predictedChar = _alphabet[maxIdx];
+            
+            if (predictedChar == '_') continue;
+            
+            resultText += predictedChar;
+            confidences.Add(maxVal);
         }
 
         return new OcrResult(resultText, confidences);

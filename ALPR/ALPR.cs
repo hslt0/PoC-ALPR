@@ -35,7 +35,8 @@ public class AlprEngine(IDetector detector, IOcr ocr)
 
         return results;
     }
-
+    
+    //method never used but original Python library contains it
     public Image<Rgba32> DrawPredictions(Image<Rgba32> frame, List<AlprResult> results, SixLabors.Fonts.Font font)
     {
         var outputImage = frame.Clone();

@@ -23,7 +23,7 @@ public class DefaultDetector(string modelPath, float confidenceThreshold = 0.4f)
         };
 
         using var output = _session.Run(inputs);
-        var outputTensor = output.First().AsTensor<float>();
+        var outputTensor = output[0].AsTensor<float>();
 
         return ParseOutput(outputTensor, ratio, padding);
     }

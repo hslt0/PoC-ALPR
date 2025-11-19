@@ -3,10 +3,7 @@ using SixLabors.ImageSharp.PixelFormats;
 
 namespace ALPR;
 
-public record BoundingBox(int X1, int Y1, int X2, int Y2)
-{
-    public Rectangle ToRectangle() => new Rectangle(X1, Y1, X2 - X1, Y2 - Y1);
-}
+public record BoundingBox(int X1, int Y1, int X2, int Y2);
 
 public record DetectionResult(string Label, float Confidence, BoundingBox BoundingBox);
 
