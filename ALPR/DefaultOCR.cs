@@ -9,15 +9,15 @@ namespace ALPR;
 public class DefaultOcr(
     string modelPath,
     string alphabet = DefaultOcr.DefaultAlphabet,
-    int height = 32,
-    int width = 128,
+    int height = 70,
+    int width = 140,
     int maxSlots = 8)
     : IOcr, IDisposable
 {
     private readonly InferenceSession _session = new(modelPath);
     private readonly char[] _alphabet = alphabet.ToCharArray();
 
-    private const string DefaultAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    private const string DefaultAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_";
 
     public OcrResult Predict(Image<Rgba32> croppedPlate)
     {

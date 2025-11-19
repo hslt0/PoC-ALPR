@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using App.Services;
+using Microsoft.Extensions.Logging;
 
 namespace App;
 
@@ -18,6 +19,7 @@ public static class MauiProgram
         builder.Logging.AddDebug();
 #endif
 
+        builder.Services.AddSingleton<AlprService>();
         return builder.Build();
     }
 }

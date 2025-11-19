@@ -1,5 +1,108 @@
 ﻿@page "/"
+@using global::App.Services
+@inject AlprService AlprService
 
-<h1>Hello, world!</h1>
+<h1>ALPR Scanner</h1>
 
-Welcome to your new app.
+<div class="card">
+    <button class="btn btn-primary btn-lg mb-3" @onclick="TakePhoto" disabled="@_isLoading">
+        @if (_isLoading)
+        {
+            <span>Loading...</span>
+        }
+        else
+        {
+            <span>Take Photo</span>
+        }
+    </button>
+
+    @if (!string.IsNullOrEmpty(_imgSrc))
+    {
+        <div class="text-center mb-3">
+            <img src="@_imgSrc" style="max-width: 100%; max-height: 300px; border: 2px solid #ccc;" alt="Captured Image"/>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_resultText))
+    {
+        <div class="alert alert-info">
+            <h4>Result:</h4>
+            <pre style="font-size: 1.2em; font-weight: bold;">@_resultText</pre>
+        </div>
+    }
+    
+    @if (!string.IsNullOrEmpty(_errorText))
+    {
+        <div class="alert alert-danger">@_errorText</div>
+    }
+</div>
+
+@code {
+    private string _imgSrc = "";
+    private string _resultText = "";
+    private string _errorText = "";
+    private bool _isLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize models on page load
+        if (!AlprService.IsInitialized)
+        {
+            _isLoading = true;
+            try
+            {
+                await AlprService.InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                _errorText = $"Failed to load models: {ex.Message}";
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+        }
+    }
+
+    private async Task TakePhoto()
+    {
+        _errorText = "";
+        _resultText = "";
+        
+        try
+        {
+            // 1. Call native MAUI MediaPicker
+            var photo = await MediaPicker.Default.CapturePhotoAsync();
+            
+            if (photo != null)
+            {
+                _isLoading = true;
+                StateHasChanged(); // Update UI to show spinner
+
+                // 2. Read stream for display in <img> (Base64)
+                await using var stream = await photo.OpenReadAsync();
+                
+                // Convert to Base64 for HTML display
+                var buffer = new byte[stream.Length];
+                await stream.ReadAsync(buffer, 0, (int)stream.Length);
+                var base64 = Convert.ToBase64String(buffer);
+                _imgSrc = $"data:image/jpeg;base64,{base64}";
+
+                // 3. Send stream to service for recognition
+                stream.Position = 0; 
+                
+                // Run heavy task in background thread
+                _resultText = await Task.Run(() => AlprService.ProcessImage(stream));
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorText = $"Camera error: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+}
