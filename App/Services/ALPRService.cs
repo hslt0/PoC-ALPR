@@ -4,16 +4,15 @@ using Image = SixLabors.ImageSharp.Image;
 
 namespace App.Services;
 
-public class ALPRService
+public class AlprService
 {
     private AlprEngine _engine = null!;
-    private bool _isInitialized;
 
-    public bool IsInitialized => _isInitialized;
+    public bool IsInitialized { get; private set; }
 
     public async Task InitializeAsync()
     {
-        if (_isInitialized) return;
+        if (IsInitialized) return;
 
         try
         {
@@ -24,7 +23,7 @@ public class ALPRService
             var ocr = new DefaultOcr(ocrPath);
             _engine = new AlprEngine(detector, ocr);
             
-            _isInitialized = true;
+            IsInitialized = true;
         }
         catch (Exception ex)
         {
@@ -35,7 +34,7 @@ public class ALPRService
 
     public string ProcessImage(Stream imageStream)
     {
-        if (!_isInitialized) return "System not initialized";
+        if (!IsInitialized) return "System not initialized";
 
         try
         {

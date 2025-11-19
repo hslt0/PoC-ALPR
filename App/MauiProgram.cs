@@ -19,7 +19,7 @@ public static class MauiProgram
         builder.Logging.AddDebug();
 #endif
 
-        builder.Services.AddSingleton<ALPRService>();
+        builder.Services.AddSingleton<AlprService>();
         return builder.Build();
     }
 }
