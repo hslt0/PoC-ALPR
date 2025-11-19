@@ -1,40 +1,55 @@
 ﻿@page "/"
 @using global::App.Services
+@using Microsoft.Maui.Media
 @inject AlprService AlprService
 
-<h1>ALPR Scanner</h1>
-
-<div class="card">
-    <button class="btn btn-primary btn-lg mb-3" @onclick="TakePhoto" disabled="@_isLoading">
-        @if (_isLoading)
-        {
-            <span>Loading...</span>
-        }
-        else
-        {
-            <span>Take Photo</span>
-        }
-    </button>
-
-    @if (!string.IsNullOrEmpty(_imgSrc))
-    {
-        <div class="text-center mb-3">
-            <img src="@_imgSrc" style="max-width: 100%; max-height: 300px; border: 2px solid #ccc;" alt="Captured Image"/>
-        </div>
-    }
-
-    @if (!string.IsNullOrEmpty(_resultText))
-    {
-        <div class="alert alert-info">
-            <h4>Result:</h4>
-            <pre style="font-size: 1.2em; font-weight: bold;">@_resultText</pre>
-        </div>
-    }
+<div class="d-flex flex-column justify-content-center align-items-center p-3" style="min-height: 90vh;">
     
-    @if (!string.IsNullOrEmpty(_errorText))
-    {
-        <div class="alert alert-danger">@_errorText</div>
-    }
+    <h1 class="mb-4 text-center fw-bold">ALPR Scanner</h1>
+
+    <div class="card shadow-sm w-100" style="max-width: 500px;">
+        <div class="card-body">
+            <div class="d-grid gap-2 mb-4">
+                <button class="btn btn-primary btn-lg py-3" @onclick="TakePhoto" disabled="@_isLoading">
+                    @if (_isLoading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        <span>Processing...</span>
+                    }
+                    else
+                    {
+                        <span>Take Photo</span>
+                    }
+                </button>
+        
+                <button class="btn btn-outline-secondary btn-lg py-3" @onclick="PickPhoto" disabled="@_isLoading">
+                     <span>Upload from Gallery</span>
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_imgSrc))
+            {
+                <div class="text-center mb-3 bg-light p-2 rounded">
+                    <img src="@_imgSrc" class="img-fluid rounded" style="max-height: 300px;" alt="Captured Image"/>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_resultText))
+            {
+                <div class="alert alert-success border-0 shadow-sm">
+                    <h5 class="alert-heading fw-bold">Detected:</h5>
+                    <pre class="mb-0" style="font-size: 1.2em; font-weight: bold; white-space: pre-wrap;">@_resultText</pre>
+                </div>
+            }
+    
+            @if (!string.IsNullOrEmpty(_errorText))
+            {
+                <div class="alert alert-danger d-flex align-items-center">
+                    <span>@_errorText</span>
+                </div>
+            }
+        </div>
+    </div>
 </div>
 
 @code {
@@ -45,7 +60,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Initialize models on page load
         if (!AlprService.IsInitialized)
         {
             _isLoading = true;
@@ -66,38 +80,64 @@
 
     private async Task TakePhoto()
     {
-        _errorText = "";
-        _resultText = "";
-        
         try
         {
-            // 1. Call native MAUI MediaPicker
-            var photo = await MediaPicker.Default.CapturePhotoAsync();
-            
-            if (photo != null)
+            if (MediaPicker.Default.IsCaptureSupported)
             {
-                _isLoading = true;
-                StateHasChanged(); // Update UI to show spinner
-
-                // 2. Read stream for display in <img> (Base64)
-                await using var stream = await photo.OpenReadAsync();
-                
-                // Convert to Base64 for HTML display
-                var buffer = new byte[stream.Length];
-                await stream.ReadAsync(buffer, 0, (int)stream.Length);
-                var base64 = Convert.ToBase64String(buffer);
-                _imgSrc = $"data:image/jpeg;base64,{base64}";
-
-                // 3. Send stream to service for recognition
-                stream.Position = 0; 
-                
-                // Run heavy task in background thread
-                _resultText = await Task.Run(() => AlprService.ProcessImage(stream));
+                var photo = await MediaPicker.Default.CapturePhotoAsync();
+                await ProcessPhoto(photo);
+            }
+            else
+            {
+                _errorText = "Camera is not supported on this device.";
             }
         }
         catch (Exception ex)
         {
             _errorText = $"Camera error: {ex.Message}";
+        }
+    }
+
+    private async Task PickPhoto()
+    {
+        try
+        {
+            var photos = await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions
+            {
+                SelectionLimit = 1
+            });
+            await ProcessPhoto(photos.FirstOrDefault());
+        }
+        catch (Exception ex)
+        {
+            _errorText = $"Gallery error: {ex.Message}";
+        }
+    }
+
+    private async Task ProcessPhoto(FileResult? photo)
+    {
+        if (photo == null) return;
+
+        _errorText = "";
+        _resultText = "";
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            await using var stream = await photo.OpenReadAsync();
+            
+            var buffer = new byte[stream.Length];
+            await stream.ReadExactlyAsync(buffer, 0, (int)stream.Length);
+            var base64 = Convert.ToBase64String(buffer);
+            _imgSrc = $"data:image/jpeg;base64,{base64}";
+
+            stream.Position = 0; 
+            _resultText = await Task.Run(() => AlprService.ProcessImage(stream));
+        }
+        catch (Exception ex)
+        {
+            _errorText = $"Processing error: {ex.Message}";
         }
         finally
         {
