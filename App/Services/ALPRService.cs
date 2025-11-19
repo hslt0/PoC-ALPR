@@ -4,7 +4,7 @@ using Image = SixLabors.ImageSharp.Image;
 
 namespace App.Services;
 
-public class AlprService
+public class ALPRService
 {
     private AlprEngine _engine = null!;
     private bool _isInitialized;
