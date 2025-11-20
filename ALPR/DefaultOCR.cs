@@ -8,7 +8,7 @@ namespace ALPR;
 
 /// <summary>
 /// Default implementation of the Optical Character Recognition (OCR) engine.
-/// This class is designed to work with "fast-plate-ocr" ONNX models (e.g., MobileViT-v2).
+/// This class is designed to work with "fast-plate-ocr" ONNX models (e.g., cct-xs-global).
 /// It handles image resizing, grayscale conversion, and decoding of model predictions into text.
 /// </summary>
 /// <param name="modelPath">The file path to the .onnx OCR model.</param>
