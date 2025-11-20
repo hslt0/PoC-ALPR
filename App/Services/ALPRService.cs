@@ -1,6 +1,5 @@
 ﻿using ALPR;
-using SixLabors.ImageSharp.PixelFormats;
-using Image = SixLabors.ImageSharp.Image;
+using SkiaSharp;
 
 namespace App.Services;
 
@@ -16,9 +15,11 @@ public class AlprService
 
         try
         {
-            var yoloPath = await CopyAssetToCacheAsync("yolo.onnx");
-            var ocrPath = await CopyAssetToCacheAsync("ocr.onnx");
+            var yoloPath = await CopyAssetToCacheAsync("yolo-v9-t-384-license-plates-end2end.onnx");
+            var ocrPath = await CopyAssetToCacheAsync("cct_xs_v1_global.onnx");
 
+            // Припускаємо, що DefaultDetector та DefaultOcr були оновлені 
+            // для роботи з SKBitmap
             var detector = new DefaultDetector(yoloPath);
             var ocr = new DefaultOcr(ocrPath);
             _engine = new AlprEngine(detector, ocr);
@@ -40,8 +41,11 @@ public class AlprService
         {
             if (imageStream.Position != 0) imageStream.Position = 0;
 
-            using var image = Image.Load<Rgba32>(imageStream);
-            var results = _engine.Predict(image);
+            using var bitmap = SKBitmap.Decode(imageStream); 
+            
+            if (bitmap == null) return "Processing error: Could not decode image data.";
+
+            var results = _engine.Predict(bitmap);
 
             if (results.Count == 0) return "No license plates found";
 

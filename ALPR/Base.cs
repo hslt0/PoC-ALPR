@@ -1,5 +1,4 @@
-﻿using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+﻿using SkiaSharp;
 
 namespace ALPR;
 
@@ -37,7 +36,7 @@ public interface IDetector
     /// </summary>
     /// <param name="frame">The input image to be analyzed.</param>
     /// <returns>A list of detected objects with their bounding boxes and confidence scores.</returns>
-    public List<DetectionResult> Predict(Image<Rgba32> frame);
+    public List<DetectionResult> Predict(SKBitmap frame);
 }
 
 /// <summary>
@@ -50,5 +49,5 @@ public interface IOcr
     /// </summary>
     /// <param name="croppedPlate">The cropped image containing only the license plate.</param>
     /// <returns>An <see cref="OcrResult"/> containing the text and confidence, or null if no text could be recognized.</returns>
-    public OcrResult? Predict(Image<Rgba32> croppedPlate);
+    public OcrResult? Predict(SKBitmap croppedPlate);
 }

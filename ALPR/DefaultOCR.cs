@@ -1,137 +1,135 @@
 ﻿using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 
 namespace ALPR;
 
 /// <summary>
 /// Default implementation of the Optical Character Recognition (OCR) engine.
-/// This class is designed to work with "fast-plate-ocr" ONNX models (e.g., cct-xs-global).
-/// It handles image resizing, grayscale conversion, and decoding of model predictions into text.
+/// Handles image preprocessing (resizing, RGB conversion) and runs inference using ONNX Runtime with SkiaSharp.
 /// </summary>
 /// <param name="modelPath">The file path to the .onnx OCR model.</param>
-/// <param name="alphabet">The string of characters the model was trained to recognize. Defaults to alphanumeric + underscore.</param>
-/// <param name="height">The target image height required by the model input (default 70).</param>
-/// <param name="width">The target image width required by the model input (default 140).</param>
-/// <param name="maxSlots">The maximum number of characters (slots) the model predicts (default 8).</param>
+/// <param name="alphabet">The string of characters the model was trained to recognize (including padding).</param>
+/// <param name="height">The target image height required by the model input.</param>
+/// <param name="width">The target image width required by the model input.</param>
+/// <param name="maxSlots">The maximum number of characters (slots) the model predicts.</param>
 public class DefaultOcr(
     string modelPath,
     string alphabet = DefaultOcr.DefaultAlphabet,
-    int height = 70,
-    int width = 140,
-    int maxSlots = 8)
+    int height = 64,
+    int width = 128, 
+    int maxSlots = 9)
     : IOcr, IDisposable
 {
     private readonly InferenceSession _session = new(modelPath);
     private readonly char[] _alphabet = alphabet.ToCharArray();
 
-    // Standard alphabet for global models usually includes digits, uppercase letters, and the underscore as padding.
+    /// <summary>
+    /// Standard alphabet for global models, including alphanumeric characters and the underscore as a padding symbol.
+    /// </summary>
     private const string DefaultAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_";
 
     /// <summary>
     /// Performs text recognition on a cropped license plate image.
     /// </summary>
-    /// <param name="croppedPlate">The cropped image containing only the license plate.</param>
-    /// <returns>An <see cref="OcrResult"/> with the recognized text string and confidence scores.</returns>
-    public OcrResult Predict(Image<Rgba32> croppedPlate)
+    /// <param name="croppedPlate">The cropped image containing only the license plate (as SKBitmap).</param>
+    /// <returns>An <see cref="OcrResult"/> containing the recognized text and confidence scores.</returns>
+    public OcrResult Predict(SKBitmap croppedPlate)
     {
-        // 1. Preprocess: Resize, Grayscale, and Convert to Tensor
+        // 1. Preprocess the image into a tensor
         var inputTensor = Preprocess(croppedPlate);
 
-        // 2. Setup input for ONNX
+        // 2. Prepare inputs for ONNX Runtime
         var inputName = _session.InputMetadata.Keys.First();
         var inputs = new List<NamedOnnxValue>
         {
             NamedOnnxValue.CreateFromTensor(inputName, inputTensor)
         };
 
-        // 3. Run Inference
+        // 3. Run inference
         using var output = _session.Run(inputs);
         
-        // 4. Get output tensor (Raw scores/logits)
+        // 4. Extract the output tensor
         var outputTensor = output.First().AsTensor<float>();
 
-        // 5. Decode output to string
+        // 5. Decode the results into a string
         return DecodeOutput(outputTensor);
     }
 
     /// <summary>
-    /// Prepares the image for the OCR model.
+    /// Converts the input image into a Byte Tensor (UINT8) required by the model.
+    /// Resizes the image and maps pixels to an RGB format [1, Height, Width, 3].
     /// </summary>
-    /// <remarks>
-    /// Steps:
-    /// 1. Resizes the image to the specific dimensions (e.g., 140x70).
-    /// 2. Converts the image to grayscale.
-    /// 3. Creates a Byte Tensor in [Batch=1, Height, Width, Channels=1] format.
-    /// Note: This specific model expects UINT8 input, not Float.
-    /// </remarks>
     /// <param name="plate">The source image.</param>
-    /// <returns>A DenseTensor of bytes ready for inference.</returns>
-    private DenseTensor<byte> Preprocess(Image<Rgba32> plate)
+    /// <returns>A dense tensor of bytes representing the image.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if pixel data cannot be accessed safely.</exception>
+    private DenseTensor<byte> Preprocess(SKBitmap plate)
     {
-        using var processedImg = plate.Clone(x => 
-        {
-            x.Resize(width, height);
-            x.Grayscale(); 
-        });
+        // Resize to target dimensions using standard sampling
+        var info = new SKImageInfo(width, height, SKColorType.Rgba8888);
+        using var resizedBitmap = plate.Resize(info, SKSamplingOptions.Default);
 
-        // Create tensor with shape [1, H, W, 1]
-        var tensor = new DenseTensor<byte>(new[] { 1, height, width, 1 });
+        // Create a tensor with shape [Batch=1, Height, Width, Channels=3]
+        var tensor = new DenseTensor<byte>(new[] { 1, height, width, 3 });
 
-        processedImg.ProcessPixelRows(accessor =>
+        var pixmap = new SKPixmap();
+        
+        // Ensure we can access the pixel memory safely
+        if (!resizedBitmap.PeekPixels(pixmap))
         {
-            for (var y = 0; y < accessor.Height; y++)
+            throw new InvalidOperationException("Could not get safe pixel access from resized SKBitmap.");
+        }
+        
+        var pixelSpan = pixmap.GetPixelSpan<SKColor>(); 
+        
+        // Iterate through pixels and populate the tensor
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
             {
-                var pixelRow = accessor.GetRowSpan(y);
-                for (var x = 0; x < pixelRow.Length; x++)
-                {
-                    // Since image is grayscale, R=G=B. We take R channel as the byte value.
-                    tensor[0, y, x, 0] = pixelRow[x].R; 
-                }
+                var pixelIndex = y * width + x; 
+                var color = pixelSpan[pixelIndex];
+
+                // Populate RGB channels
+                tensor[0, y, x, 0] = color.Red;   // R
+                tensor[0, y, x, 1] = color.Green; // G
+                tensor[0, y, x, 2] = color.Blue;  // B
             }
-        });
+        }
 
         return tensor;
     }
 
     /// <summary>
-    /// Decodes the raw model output into a readable string using ArgMax logic.
+    /// Decodes the raw model output using ArgMax logic.
+    /// Finds the character with the highest probability for each slot and constructs the result string.
     /// </summary>
-    /// <remarks>
-    /// The model outputs a set of probabilities for every character in the alphabet for every "slot" (character position).
-    /// This method finds the character with the highest probability for each slot.
-    /// It skips characters that match the padding symbol ('_').
-    /// </remarks>
-    /// <param name="output">The raw float output from the model.</param>
-    /// <returns>The decoded result.</returns>
+    /// <param name="output">The raw float output tensor from the model.</param>
+    /// <returns>The decoded OCR result.</returns>
     private OcrResult DecodeOutput(Tensor<float> output)
     {
-        var vocabSize = _alphabet.Length;
         var slots = maxSlots;
-        
+        var vocabSize = alphabet.Length;
+
         var data = output.ToDenseTensor().Buffer.Span;
         
         var resultText = "";
         var confidences = new List<float>();
 
-        // Iterate through each character slot (e.g., 8 slots)
+        // Iterate over each character slot
         for (var i = 0; i < slots; i++)
         {
             var maxVal = -float.MaxValue;
             var maxIdx = 0;
 
-            // Find the character index with the highest score (ArgMax)
+            // Find the index with the highest score in the vocabulary
             for (var j = 0; j < vocabSize; j++)
             {
-                // Calculate flat index: current_slot * alphabet_size + current_char_index
                 var flatIndex = i * vocabSize + j;
                 
                 if (flatIndex >= data.Length) break;
 
                 var val = data[flatIndex];
-                
                 if (val > maxVal)
                 {
                     maxVal = val;
@@ -139,12 +137,11 @@ public class DefaultOcr(
                 }
             }
 
-            // Safety check
             if (maxIdx >= _alphabet.Length) continue;
             
             var predictedChar = _alphabet[maxIdx];
             
-            // Ignore the padding character (usually '_')
+            // Skip the padding character
             if (predictedChar == '_') continue;
             
             resultText += predictedChar;
@@ -155,7 +152,7 @@ public class DefaultOcr(
     }
 
     /// <summary>
-    /// Disposes the ONNX InferenceSession.
+    /// Disposes the ONNX InferenceSession to release unmanaged resources.
     /// </summary>
     public void Dispose()
     {

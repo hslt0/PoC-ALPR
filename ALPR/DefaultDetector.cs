@@ -1,16 +1,14 @@
-﻿using Microsoft.ML.OnnxRuntime;
+﻿using System.Runtime.InteropServices;
+using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Drawing.Processing;
+using SkiaSharp;
 
 namespace ALPR;
 
 /// <summary>
 /// Default implementation of the object detector using YOLOv9 ONNX models.
 /// This class handles the specific preprocessing (letterboxing) and postprocessing 
-/// required for YOLO "End-to-End" models.
+/// required for YOLO "End-to-End" models, using SkiaSharp for image handling.
 /// </summary>
 /// <param name="modelPath">The file path to the .onnx model.</param>
 /// <param name="confidenceThreshold">The minimum confidence score (0.0 - 1.0) required to accept a detection. Defaults to 0.4.</param>
@@ -24,9 +22,9 @@ public class DefaultDetector(string modelPath, float confidenceThreshold = 0.4f)
     /// <summary>
     /// Runs object detection on the provided image frame.
     /// </summary>
-    /// <param name="frame">The input image to analyze.</param>
+    /// <param name="frame">The input image to analyze (as an SKBitmap).</param>
     /// <returns>A list of detected license plates with their bounding boxes and confidence scores.</returns>
-    public List<DetectionResult> Predict(Image<Rgba32> frame)
+    public List<DetectionResult> Predict(SKBitmap frame) // Зміна типу входу
     {
         // 1. Preprocess the image to match model input requirements
         var (inputTensor, ratio, padding) = Preprocess(frame);
@@ -41,7 +39,7 @@ public class DefaultDetector(string modelPath, float confidenceThreshold = 0.4f)
         // 3. Run inference
         using var output = _session.Run(inputs);
         
-        // 4. Get the first output tensor (usually named "output0" or similar)
+        // 4. Get the first output tensor 
         var outputTensor = output[0].AsTensor<float>();
 
         // 5. Parse raw float data into detection results
@@ -49,70 +47,65 @@ public class DefaultDetector(string modelPath, float confidenceThreshold = 0.4f)
     }
 
     /// <summary>
-    /// Prepares the image for the YOLO model using "Letterbox" resizing.
+    /// Prepares the image for the YOLO model using "Letterbox" resizing (SkiaSharp implementation).
     /// </summary>
     /// <remarks>
-    /// YOLO models expect square inputs (e.g., 384x384). To avoid distorting the image aspect ratio:
-    /// 1. The image is scaled down to fit within the target size.
-    /// 2. The remaining space is padded with a gray color (114, 114, 114).
-    /// 3. Pixel values are normalized to [0.0, 1.0].
+    /// The original image is scaled and padded to 384x384 using a gray background (114, 114, 114).
+    /// Pixels are normalized to the [0.0, 1.0] range and converted to the NCHW float tensor format.
     /// </remarks>
-    /// <param name="originalImage">The source image.</param>
+    /// <param name="originalImage">The source image (as SKBitmap).</param>
     /// <returns>
     /// A tuple containing:
     /// <br/>- <b>Tensor:</b> The processed image data in NCHW format.
     /// <br/>- <b>Ratio:</b> The scaling factor used.
     /// <br/>- <b>Padding:</b> The (width, height) padding added to center the image.
     /// </returns>
-    private (DenseTensor<float> Tensor, float Ratio, (float dw, float dh) Padding) Preprocess(Image<Rgba32> originalImage)
+    private (DenseTensor<float> Tensor, float Ratio, (float dw, float dh) Padding) Preprocess(SKBitmap originalImage)
     {
         var targetW = TargetSize;
         var targetH = TargetSize;
 
-        // Calculate scaling ratio (min of width/height ratios) to fit inside target box
         var r = Math.Min((float)targetW / originalImage.Width, (float)targetH / originalImage.Height);
-        
-        // Calculate new dimensions
         var newUnpadW = (int)Math.Round(originalImage.Width * r);
         var newUnpadH = (int)Math.Round(originalImage.Height * r);
-
-        // Calculate padding needed to fill the square
         var dw = (targetW - newUnpadW) / 2f;
         var dh = (targetH - newUnpadH) / 2f;
-
-        // Create a canvas filled with gray (YOLO standard padding color)
-        using var canvas = new Image<Rgba32>(targetW, targetH);
-        canvas.Mutate(x => x.Fill(SixLabors.ImageSharp.Color.FromRgb(114, 114, 114)));
-
-        // Resize original image
-        using var resizedImg = originalImage.Clone(x => x.Resize(newUnpadW, newUnpadH));
-
         var left = (int)Math.Round(dw - 0.1f);
         var top = (int)Math.Round(dh - 0.1f);
         
-        // Draw resized image onto the center of the gray canvas
-        // ReSharper disable once AccessToDisposedClosure
-        canvas.Mutate(x => x.DrawImage(resizedImg, new SixLabors.ImageSharp.Point(left, top), 1f));
-
-        // Create tensor with shape [Batch=1, Channels=3, Height, Width]
-        var tensor = new DenseTensor<float>(new[] { 1, 3, targetH, targetW });
-
-        // Copy pixels to tensor and normalize (0-255 -> 0.0-1.0)
-        canvas.ProcessPixelRows(accessor =>
+        var info = new SKImageInfo(targetW, targetH, SKColorType.Rgba8888); 
+        using var canvasBitmap = new SKBitmap(info);
+        
+        using (var canvas = new SKCanvas(canvasBitmap))
         {
-            for (var y = 0; y < accessor.Height; y++)
-            {
-                var pixelRow = accessor.GetRowSpan(y);
-                for (var x = 0; x < pixelRow.Length; x++)
-                {
-                    var pixel = pixelRow[x];
-                    tensor[0, 0, y, x] = pixel.R / 255.0f;
-                    tensor[0, 1, y, x] = pixel.G / 255.0f;
-                    tensor[0, 2, y, x] = pixel.B / 255.0f;
-                }
-            }
-        });
+            canvas.Clear(new SKColor(114, 114, 114));
 
+            var srcRect = new SKRect(0, 0, originalImage.Width, originalImage.Height);
+            var destRect = new SKRect(left, top, left + newUnpadW, top + newUnpadH);
+
+            canvas.DrawBitmap(originalImage, srcRect, destRect);
+        }
+
+        var tensor = new DenseTensor<float>(new[] { 1, 3, targetH, targetW });
+        
+        var bufferSize = canvasBitmap.Width * canvasBitmap.Height * 4; 
+        var pixelArray = new byte[bufferSize];
+        
+        var ptr = canvasBitmap.GetPixels();
+        Marshal.Copy(ptr, pixelArray, 0, bufferSize);
+        
+        for (var y = 0; y < targetH; y++)
+        {
+            for (var x = 0; x < targetW; x++)
+            {
+                var pixelIndex = (y * targetW + x) * 4; 
+                
+                tensor[0, 0, y, x] = pixelArray[pixelIndex + 0] / 255.0f; // R
+                tensor[0, 1, y, x] = pixelArray[pixelIndex + 1] / 255.0f; // G
+                tensor[0, 2, y, x] = pixelArray[pixelIndex + 2] / 255.0f; // B
+            }
+        }
+        
         return (tensor, r, (dw, dh));
     }
 
