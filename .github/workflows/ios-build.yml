@@ -1,0 +1,39 @@
+﻿name: Build iOS for Appetize
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Select Xcode 26.1
+        run: sudo xcode-select -s /Applications/Xcode_26.1.app/Contents/Developer
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 10.0.100
+
+      - name: Restore Workloads
+        run: dotnet workload restore
+      
+      - name: Build for iOS Simulator
+        run: |
+          dotnet build App/App.csproj -f net10.0-ios -c Release -p:RuntimeIdentifier=iossimulator-arm64
+
+      - name: Zip .app bundle
+        run: |
+          cd App/bin/Release/net10.0-ios/iossimulator-arm64
+          zip -r ios-app.zip App.app
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app-for-appetize
+          path: App/bin/Release/net10.0-ios/iossimulator-arm64/ios-app.zip
