@@ -1,9 +1,7 @@
 ﻿name: Build iOS for Appetize
 
 on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    workflow_dispatch:
 
 jobs:
   build:
