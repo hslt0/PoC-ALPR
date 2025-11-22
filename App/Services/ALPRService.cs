@@ -17,9 +17,6 @@ public class AlprService
         {
             var yoloPath = await CopyAssetToCacheAsync("yolo-v9-t-384-license-plates-end2end.onnx");
             var ocrPath = await CopyAssetToCacheAsync("cct_xs_v1_global.onnx");
-
-            // Припускаємо, що DefaultDetector та DefaultOcr були оновлені 
-            // для роботи з SKBitmap
             var detector = new DefaultDetector(yoloPath);
             var ocr = new DefaultOcr(ocrPath);
             _engine = new AlprEngine(detector, ocr);
